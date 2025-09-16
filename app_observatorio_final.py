@@ -1,9 +1,6 @@
 # Write the updated Streamlit app with NFQ theming, tabs, clickable links, smaller charts.
 import os, textwrap, json
 
-base_dir = "/mnt/data/observatorio_repo_app"
-os.makedirs(base_dir, exist_ok=True)
-
 code = r'''
 import streamlit as st
 import pandas as pd
