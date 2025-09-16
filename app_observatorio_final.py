@@ -1,7 +1,3 @@
-# Write the updated Streamlit app with NFQ theming, tabs, clickable links, smaller charts.
-import os, textwrap, json
-
-code = r'''
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -9,14 +5,17 @@ import requests
 from urllib.parse import quote
 from io import StringIO
 
+# ===================== CONFIG =====================
 st.set_page_config(page_title="Observatorio ESG — NFQ", page_icon=None, layout="wide")
 
-# ===================== CONFIG =====================
+# Tu Google Sheet y pestaña:
 SHEET_ID = "1tGyDxmB1TuBFiC8k-j19IoSkJO7gkdFCBIlG_hBPUCw"   # <- tu Sheet ID
 WORKSHEET = "BBDD"                                         # <- tu pestaña
-FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLScTbCS0DRON_-aVzdA4y65_18cicMQdLy98uiapoXqc5B6xeQ/formResponse"  # <- tu formResponse
 
-# Pega aquí tus entry.xxxxxx reales cuando los tengas (si no, deja tal cual y la pestaña "Alta" mostrará aviso).
+# Tu Google Form (URL termina en /formResponse):
+FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLScTbCS0DRON_-aVzdA4y65_18cicMQdLy98uiapoXqc5B6xeQ/formResponse"
+
+# Pega aquí tus entry.xxxxxx reales cuando los tengas (si no, la pestaña "Alta" avisará).
 ENTRY_MAP = {
     "Nombre": "",
     "Documento": "",
@@ -50,7 +49,6 @@ COLUMNS = [
 ]
 
 # ===================== THEME (NFQ) =====================
-# Paleta derivada del logo: rojo, azul, naranja, morado
 NFQ_RED = "#9e1927"
 NFQ_BLUE = "#6fa2d9"
 NFQ_ORANGE = "#d4781b"
@@ -59,7 +57,6 @@ BG_GRADIENT = f"linear-gradient(135deg, {NFQ_ORANGE}20, {NFQ_RED}20 33%, {NFQ_PU
 
 st.markdown(f"""
 <style>
-/* Fondo y tipografía */
 :root {{
   --nfq-red: {NFQ_RED};
   --nfq-blue: {NFQ_BLUE};
@@ -70,16 +67,11 @@ st.markdown(f"""
   background: {BG_GRADIENT};
   background-attachment: fixed;
 }}
-/* Contenedores */
 .block-container {{
   padding-top: 1.2rem;
   padding-bottom: 2.5rem;
 }}
-/* Títulos */
-h1, h2, h3 {{
-  letter-spacing: 0.2px;
-}}
-/* Tarjetas KPI (usa metric) */
+h1, h2, h3 {{ letter-spacing: 0.2px; }}
 [data-testid="stMetric"] {{
   background: #ffffffcc;
   border: 1px solid #ffffff;
@@ -87,20 +79,17 @@ h1, h2, h3 {{
   padding: 12px 16px;
   box-shadow: 0 2px 12px rgb(0 0 0 / 6%);
 }}
-/* Tabla más vistosa */
-[data-testid="stDataFrame"] {{ 
-  background: #ffffffee; 
+[data-testid="stDataFrame"] {{
+  background: #ffffffee;
   border-radius: 16px;
   box-shadow: 0 4px 18px rgb(0 0 0 / 10%);
   border: 1px solid #ffffff;
   overflow: hidden;
 }}
-/* Barra lateral */
 section[data-testid="stSidebar"] > div {{
   background: #ffffffd8;
   border-left: 4px solid var(--nfq-purple);
 }}
-/* Pestañas */
 [data-testid="stHorizontalBlock"] [data-baseweb="tab"] {{
   background: transparent;
 }}
@@ -120,11 +109,10 @@ def ensure_schema(df: pd.DataFrame) -> pd.DataFrame:
     # Año / Mes
     df["Año publicación"] = pd.to_numeric(df["Año publicación"], errors="coerce").astype("Int64")
     df["Mes publicación"] = df["Mes publicación"].astype(str).replace({"<NA>": ""})
-    # Limpiar posibles fórmulas HYPERLINK y dejar URL
+    # Extraer URL si viene como =HYPERLINK("url","texto")
     def clean_link(x):
         s = str(x)
         if s.startswith("=HYPERLINK"):
-            # =HYPERLINK("url","texto")
             import re
             m = re.search(r'HYPERLINK\("([^"]+)"', s, flags=re.IGNORECASE)
             return m.group(1) if m else ""
@@ -168,16 +156,11 @@ with tabs[0]:
     # Filtros
     with st.expander("Filtros", expanded=True):
         col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            filtro_anio = st.multiselect("Año publicación", sorted([x for x in df_full["Año publicación"].dropna().unique()]))
-        with col2:
-            filtro_tema = st.multiselect("Tema ESG", sorted([str(x) for x in df_full["Tema ESG"].dropna().unique()]))
-        with col3:
-            filtro_tipo = st.multiselect("Tipo de documento", sorted([str(x) for x in df_full["Tipo de documento"].dropna().unique()]))
-        with col4:
-            filtro_ambito = st.multiselect("Ámbito de aplicación", sorted([str(x) for x in df_full["Ámbito de aplicación"].dropna().unique()]))
-        with col5:
-            filtro_estado = st.multiselect("Estado", sorted([str(x) for x in df_full["Estado"].dropna().unique()]))
+        with col1: filtro_anio = st.multiselect("Año publicación", sorted([x for x in df_full["Año publicación"].dropna().unique()]))
+        with col2: filtro_tema = st.multiselect("Tema ESG", sorted([str(x) for x in df_full["Tema ESG"].dropna().unique()]))
+        with col3: filtro_tipo = st.multiselect("Tipo de documento", sorted([str(x) for x in df_full["Tipo de documento"].dropna().unique()]))
+        with col4: filtro_ambito = st.multiselect("Ámbito de aplicación", sorted([str(x) for x in df_full["Ámbito de aplicación"].dropna().unique()]))
+        with col5: filtro_estado = st.multiselect("Estado", sorted([str(x) for x in df_full["Estado"].dropna().unique()]))
         texto_busqueda = st.text_input("Búsqueda libre (Nombre, Documento, Descripción, Temática)")
 
     df = df_full.copy()
@@ -199,7 +182,7 @@ with tabs[0]:
     with c3: st.metric("Temas ESG", df["Tema ESG"].nunique())
     with c4: st.metric("Autoridades emisoras", df["Autoridad emisora"].nunique())
 
-    # Gráficos pequeños y lado a lado
+    # Gráficos compactos
     st.markdown("#### Vista general")
     gcol1, gcol2 = st.columns(2)
     with gcol1:
@@ -219,7 +202,7 @@ with tabs[0]:
             ).properties(height=180)
             st.altair_chart(chart2, use_container_width=True)
 
-    # Tabla vistosa + links clicables
+    # Tabla con links clicables
     st.markdown("#### Repositorio (tabla)")
     st.dataframe(
         df,
@@ -297,11 +280,8 @@ with tabs[1]:
                     ENTRY_MAP["Mes publicación"]: str(mes_pub).strip(),
                     ENTRY_MAP["Año publicación"]: int(anio_pub) if anio_pub else ""
                 }
-                import requests
                 try:
-                    r = requests.post(FORM_ACTION_URL, data=payload, headers={
-                        "Content-Type": "application/x-www-form-urlencoded"
-                    }, timeout=20)
+                    r = requests.post(FORM_ACTION_URL, data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"}, timeout=20)
                     if r.status_code in (200, 302):
                         st.success("Documento enviado correctamente.")
                         st.balloons()
@@ -309,12 +289,3 @@ with tabs[1]:
                         st.error(f"No se pudo enviar al Form (status {r.status_code}). Revisa FORM_ACTION_URL y ENTRY_MAP.")
                 except Exception as e:
                     st.error(f"Error al enviar al Form: {e}")
-'''
-
-out_path = os.path.join(base_dir, "app_observatorio_nfq.py")
-with open(out_path, "w", encoding="utf-8") as f:
-    f.write(code)
-
-# requirements file (same as before)
-req_path = os.path.join(base_dir, "requirements_no_secrets.txt")
-print(out_path, req_path)
