@@ -135,9 +135,6 @@ st.title("Observatorio ESG — NFQ")
 
 tabs = st.tabs(["Repositorio", "Alta nuevo documento"])
 
-with st.sidebar:
-    st.header("Configuración")
-    debug = st.checkbox("Mostrar depuración", value=False)
 
 
 # ------------ TAB 1: REPOSITORIO ------------
@@ -146,12 +143,7 @@ with tabs[0]:
         df_full = load_sheet(SHEET_ID, WORKSHEET)
     except Exception as e:
         st.error("No se pudo cargar el Google Sheet. Verifica permisos (Lector público), SHEET_ID y nombre de pestaña.")
-        if st.sidebar.checkbox("Ver detalle del error"):
-            st.exception(e)
-        st.stop()
 
-    if debug:
-        st.write("Vista previa:", df_full.head(5))
 
     # Filtros
     with st.expander("Filtros", expanded=True):
