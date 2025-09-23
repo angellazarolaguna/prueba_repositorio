@@ -146,7 +146,7 @@ with tabs[0]:
 
 
     # Filtros
-    with st.expander("Filtros", expanded=True):
+    with st.expander("Filtros", expanded=False):
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1: filtro_anio = st.multiselect("Año publicación", sorted([x for x in df_full["Año publicación"].dropna().unique()]))
         with col2: filtro_tema = st.multiselect("Tema ESG", sorted([str(x) for x in df_full["Tema ESG"].dropna().unique()]))
@@ -220,10 +220,10 @@ with tabs[1]:
             nombre = st.text_input("Nombre*", placeholder="Título breve del documento")
             documento = st.text_input("Documento", placeholder="Código/Identificador si aplica")
             link = st.text_input("Link", placeholder="https://...")
-            autoridad = st.text_input("Autoridad emisora", placeholder="Ej. EBA, ESMA, UE, CNMV...")
+            autoridad = st.selectbox("Autoridad Emisora", ["", "EBA", "ESMA", "UE", "CNMV"])
             tipo = st.text_input("Tipo de documento", placeholder="Normativa, guía, consulta, informe...")
             ambito = st.text_input("Ámbito de aplicación", placeholder="UE, ES, Global...")
-            tema_esg = st.text_input("Tema ESG", placeholder="E, S o G / Mixto")
+            tema_esg = st.selectbox("Tema ESG", ["", "E", "S", "G", "Mixto"])
             tematica_esg = st.text_input("Temática ESG", placeholder="Taxonomía, divulgación, riesgos, etc.")
             descripcion = st.text_area("Descripción", placeholder="Resumen breve")
             aplicacion = st.text_input("Aplicación", placeholder="Obligatoria/voluntaria, sectores, etc.")
