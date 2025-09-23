@@ -195,7 +195,7 @@ with tabs[0]:
             st.altair_chart(chart2, use_container_width=True)
 
     # Tabla con links clicables
-    st.markdown("#### Repositorio (tabla)")
+    st.markdown("#### Repositorio")
     st.dataframe(
         df,
         use_container_width=True,
