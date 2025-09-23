@@ -135,9 +135,7 @@ st.title("Observatorio ESG — NFQ")
 
 tabs = st.tabs(["Repositorio", "Alta nuevo documento"])
 
-with st.sidebar:
-    st.header("Configuración")
-    debug = st.checkbox("Mostrar depuración", value=False)
+
 
 # ------------ TAB 1: REPOSITORIO ------------
 with tabs[0]:
