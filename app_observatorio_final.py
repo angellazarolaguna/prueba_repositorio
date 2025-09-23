@@ -135,6 +135,9 @@ st.title("Observatorio ESG — NFQ")
 
 tabs = st.tabs(["Repositorio", "Alta nuevo documento"])
 
+with st.sidebar:
+    st.header("Configuración")
+    debug = st.checkbox("Mostrar depuración", value=False)
 
 
 # ------------ TAB 1: REPOSITORIO ------------
@@ -148,7 +151,6 @@ with tabs[0]:
         st.stop()
 
     if debug:
-        st.info(f"CSV URL: https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={quote(WORKSHEET)}")
         st.write("Vista previa:", df_full.head(5))
 
     # Filtros
