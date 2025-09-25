@@ -53,7 +53,6 @@ NFQ_RED = "#9e1927"
 NFQ_BLUE = "#6fa2d9"
 NFQ_ORANGE = "#d4781b"
 NFQ_PURPLE = "#5a64a8"
-NFQ_GREY = "#5c6773"  # añadido para tipografías/labels
 BG_GRADIENT = f"linear-gradient(135deg, {NFQ_ORANGE}20, {NFQ_RED}20 33%, {NFQ_PURPLE}20 66%, {NFQ_BLUE}20)"
 
 st.markdown(f"""
@@ -97,34 +96,6 @@ section[data-testid="stSidebar"] > div {{
 </style>
 """, unsafe_allow_html=True)
 
-# Tema Altair (colores, barras redondeadas, tipografía)
-def nfq_theme():
-    return {
-        "config": {
-            "view": {"stroke": "transparent"},
-            "background": None,
-            "font": "Inter, Segoe UI, system-ui, sans-serif",
-            "axis": {
-                "labelColor": NFQ_GREY,
-                "titleColor": NFQ_GREY,
-                "gridColor": "#e9edf3",
-                "tickColor": "#e9edf3"
-            },
-            "legend": {
-                "labelColor": NFQ_GREY,
-                "titleColor": NFQ_GREY
-            },
-            "range": {
-                "category": [NFQ_ORANGE, NFQ_RED, NFQ_PURPLE, NFQ_BLUE, "#2e7d32", "#8e24aa"]
-            },
-            "bar": {"cornerRadiusTopLeft": 8, "cornerRadiusTopRight": 8},
-            "area": {"line": True}
-        }
-    }
-
-alt.themes.register("nfq", nfq_theme)
-alt.themes.enable("nfq")
-
 # ===================== HELPERS =====================
 def ensure_schema(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [str(c).strip() for c in df.columns]
@@ -164,12 +135,15 @@ st.title("Observatorio ESG — NFQ")
 
 tabs = st.tabs(["Repositorio", "Alta nuevo documento"])
 
+
+
 # ------------ TAB 1: REPOSITORIO ------------
 with tabs[0]:
     try:
         df_full = load_sheet(SHEET_ID, WORKSHEET)
     except Exception as e:
         st.error("No se pudo cargar el Google Sheet. Verifica permisos (Lector público), SHEET_ID y nombre de pestaña.")
+
 
     # Filtros
     with st.expander("Filtros", expanded=False):
@@ -200,133 +174,25 @@ with tabs[0]:
     with c3: st.metric("Temas ESG", df["Tema ESG"].nunique())
     with c4: st.metric("Autoridades emisoras", df["Autoridad emisora"].nunique())
 
-    # ───────────────────── Gráficos centrados y mejorados ─────────────────────
+    # Gráficos compactos
     st.markdown("#### Vista general")
-
-    # ===== 1) Documentos por año (barras redondeadas + labels + hover) =====
-    dfa = df.dropna(subset=["Año publicación"]).copy()
-    if len(dfa) > 0:
-        dfa["_count"] = 1
-        dfa = dfa.sort_values("Año publicación")
-
-        sel_year = alt.selection_point(fields=["Año publicación"], nearest=True, on="mouseover", empty="none")
-
-        bars_year = (
-            alt.Chart(dfa)
-            .mark_bar(cornerRadiusTopLeft=8, cornerRadiusTopRight=8)
-            .encode(
-                x=alt.X("Año publicación:O", title="Año", sort="ascending"),
-                y=alt.Y("sum(_count):Q", title="Nº documentos"),
-                color=alt.value(NFQ_ORANGE),
-                opacity=alt.condition(sel_year, alt.value(1), alt.value(0.7)),
-                tooltip=[
-                    alt.Tooltip("Año publicación:O", title="Año"),
-                    alt.Tooltip("sum(_count):Q", title="Nº docs", format=",.0f"),
-                ],
-            )
-            .add_params(sel_year)
-            .properties(height=240, padding={"left": 10, "right": 10, "top": 10, "bottom": 10})
-            .configure_title(anchor="middle")
-        )
-
-        labels_year = (
-            alt.Chart(dfa)
-            .mark_text(dy=-6, fontSize=12, color=NFQ_GREY)
-            .encode(
-                x=alt.X("Año publicación:O", sort="ascending"),
-                y=alt.Y("sum(_count):Q"),
-                text=alt.Text("sum(_count):Q", format=",.0f"),
-            )
-        )
-
-        c1c, c2c, c3c = st.columns([1, 2, 1])   # centrado real
-        with c2c:
-            st.altair_chart(bars_year + labels_year, use_container_width=True)
-
-    st.markdown("")  # respiro
-
-    # ===== 2) Distribución por Tema ESG (donut con etiquetas externas) =====
-    dft = df.dropna(subset=["Tema ESG"]).copy()
-    if len(dft) > 0:
-        dft = (
-            dft.assign(_count=1)
-               .groupby("Tema ESG", as_index=False)["_count"].sum()
-               .sort_values("_count", ascending=False)
-        )
-
-        donut = (
-            alt.Chart(dft)
-            .mark_arc(outerRadius=110, innerRadius=58, cornerRadius=6)
-            .encode(
-                theta=alt.Theta("_count:Q", stack=True, title=None),
-                color=alt.Color("Tema ESG:N", legend=alt.Legend(title=None)),
-                tooltip=[
-                    alt.Tooltip("Tema ESG:N", title="Tema"),
-                    alt.Tooltip("_count:Q", title="Nº docs", format=",.0f"),
-                ],
-            )
-            .properties(height=260)
-            .configure_title(anchor="middle")
-        )
-
-        labels_donut = (
-            alt.Chart(dft)
-            .mark_text(radius=130, fontSize=12, color=NFQ_GREY)
-            .encode(
-                theta=alt.Theta("_count:Q", stack=True),
-                text=alt.Text("Tema ESG:N"),
-            )
-        )
-
-        c4c, c5c, c6c = st.columns([1, 2, 1])   # centrado real
-        with c5c:
-            st.altair_chart(donut + labels_donut, use_container_width=True)
-
-    st.markdown("")  # respiro
-
-    # ===== 3) Top 8 Tipos de documento (ranking horizontal elegante) =====
-    df_tipo = df.dropna(subset=["Tipo de documento"]).copy()
-    if len(df_tipo) > 0:
-        df_tipo = (
-            df_tipo.assign(_count=1)
-                   .groupby("Tipo de documento", as_index=False)["_count"].sum()
-                   .sort_values("_count", ascending=False)
-                   .head(8)
-                   .sort_values("_count", ascending=True)
-        )
-
-        sel_tipo = alt.selection_point(fields=["Tipo de documento"], nearest=True, on="mouseover", empty="none")
-
-        bars_tipo = (
-            alt.Chart(df_tipo)
-            .mark_bar(cornerRadius=8)
-            .encode(
-                x=alt.X("_count:Q", title="Nº documentos"),
-                y=alt.Y("Tipo de documento:N", sort=alt.SortField("_count", order="ascending"), title=None),
-                color=alt.value(NFQ_PURPLE),
-                opacity=alt.condition(sel_tipo, alt.value(1), alt.value(0.75)),
-                tooltip=[
-                    alt.Tooltip("Tipo de documento:N", title="Tipo"),
-                    alt.Tooltip("_count:Q", title="Nº docs", format=",.0f"),
-                ],
-            )
-            .add_params(sel_tipo)
-            .properties(height=300, padding={"left": 4, "right": 4, "top": 6, "bottom": 6})
-        )
-
-        labels_tipo = (
-            alt.Chart(df_tipo)
-            .mark_text(align="left", dx=6, fontSize=12, color=NFQ_GREY)
-            .encode(
-                x=alt.X("_count:Q"),
-                y=alt.Y("Tipo de documento:N", sort=alt.SortField("_count", order="ascending")),
-                text=alt.Text("_count:Q", format=",.0f"),
-            )
-        )
-
-        c7c, c8c, c9c = st.columns([1, 2, 1])   # centrado real
-        with c8c:
-            st.altair_chart(bars_tipo + labels_tipo, use_container_width=True)
+    gcol1, gcol2 = st.columns(2)
+    with gcol1:
+        if len(df.dropna(subset=["Año publicación"])) > 0:
+            chart1 = alt.Chart(df.dropna(subset=["Año publicación"])).mark_bar().encode(
+                x=alt.X("Año publicación:O", title="Año"),
+                y=alt.Y("count()", title="Nº documentos"),
+                tooltip=[alt.Tooltip("Año publicación:O", title="Año"), alt.Tooltip("count()", title="Nº")]
+            ).properties(height=180)
+            st.altair_chart(chart1, use_container_width=True)
+    with gcol2:
+        if len(df.dropna(subset=["Tema ESG"])) > 0:
+            chart2 = alt.Chart(df.dropna(subset=["Tema ESG"])).mark_bar().encode(
+                x=alt.X("count()", title="Nº documentos"),
+                y=alt.Y("Tema ESG:O", sort="-x", title="Tema ESG"),
+                tooltip=[alt.Tooltip("Tema ESG:O", title="Tema"), alt.Tooltip("count()", title="Nº")]
+            ).properties(height=180)
+            st.altair_chart(chart2, use_container_width=True)
 
     # Tabla con links clicables
     st.markdown("#### Repositorio")
