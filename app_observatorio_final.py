@@ -6,7 +6,6 @@ import re
 import unicodedata
 from urllib.parse import quote, urljoin
 from io import StringIO
-from datetime import datetime
 from bs4 import BeautifulSoup
 
 # ===================== CONFIG =====================
@@ -28,7 +27,7 @@ ENTRY_MAP = {k: "" for k in [
 COLUMNS = list(ENTRY_MAP.keys())
 
 # ===================== THEME =====================
-NFQ_RED = "#9e1927"; NFQ_BLUE = "#6fa2d9"; NFQ_ORANGE = "#d4781b"; NFQ_PURPLE = "#5a64a8"; NFQ_GREY = "#5c6773"
+NFQ_RED = "#9e1927"; NFQ_BLUE = "#6fa2d9"; NFQ_ORANGE = "#d4781b"; NFQ_PURPLE = "#5a64a8"
 BG_GRADIENT = f"linear-gradient(135deg, {NFQ_ORANGE}20, {NFQ_RED}20 33%, {NFQ_PURPLE}20 66%, {NFQ_BLUE}20)"
 
 st.markdown(f"""
@@ -37,8 +36,7 @@ st.markdown(f"""
 .portal-wrap{{ background:#f2dbe6; padding:18px 22px; border-radius:18px; margin-top:8px; }}
 .portal-card{{ background:#fff; border-radius:24px; box-shadow: 0 10px 24px rgb(0 0 0 / 10%); padding:14px 18px; }}
 .portal-title{{ font-size:28px; font-weight:800; color:#6b2242; margin:0 0 12px 2px; }}
-.table-header,.table-row{{ display:grid; grid-template-columns:1.6fr 1fr 4fr 1.6fr; gap:12px; align-items:center; }}
-.table-header{{ font-weight:700; border-bottom:1px solid #eee; padding:10px 4px; }}
+.table-header{{ display:grid; grid-template-columns:1.6fr 1fr 4fr 1.6fr; font-weight:700; border-bottom:1px solid #eee; padding:10px 4px; }}
 .badge-src{{ padding:4px 8px; border-radius:999px; background:#eef4ff; color:#25467a; font-weight:600; font-size:12px; }}
 .desc{{ color:#404040; font-size:14px; }}
 .hub-tag{{ font-weight:700; color:#222; }}
@@ -57,16 +55,10 @@ def ensure_schema(df: pd.DataFrame) -> pd.DataFrame:
         if c not in df.columns:
             df[c] = pd.NA
     df = df[COLUMNS]
-
-    # Fechas
     for c in ["Fecha de publicación", "Fecha de aplicación"]:
         df.loc[:, c] = pd.to_datetime(df[c], errors="coerce").dt.date
-
-    # Año / Mes
     df.loc[:, "Año publicación"] = pd.to_numeric(df["Año publicación"], errors="coerce").astype("Int64")
     df.loc[:, "Mes publicación"] = df["Mes publicación"].astype(str).replace({"<NA>": ""})
-
-    # Limpiar links HYPERLINK()
     def clean_link(x):
         s = str(x)
         if s.startswith("=HYPERLINK"):
@@ -75,7 +67,6 @@ def ensure_schema(df: pd.DataFrame) -> pd.DataFrame:
         return s
     if "Link" in df.columns:
         df.loc[:, "Link"] = df["Link"].apply(clean_link)
-
     return df
 
 @st.cache_data(ttl=30)
@@ -144,27 +135,64 @@ with tabs[0]:
 
 # --- ALTA ---
 with tabs[1]:
-    st.subheader("Alta de documento")
-    st.write("Configura FORM_ACTION_URL y ENTRY_MAP para enviar al Google Form.")
+    st.subheader("Dar de alta un nuevo documento")
+    with st.form("alta_form"):
+        colA,colB = st.columns(2)
+        with colA:
+            nombre = st.text_input("Nombre*", placeholder="Título breve")
+            documento = st.text_input("Documento")
+            link = st.text_input("Link", placeholder="https://...")
+            autoridad = st.text_input("Autoridad emisora")
+            tipo = st.text_input("Tipo de documento")
+            ambito = st.text_input("Ámbito de aplicación")
+            tema_esg = st.selectbox("Tema ESG", ["","E","S","G","Mixto"])
+            tematica = st.text_input("Temática ESG")
+            descripcion = st.text_area("Descripción")
+            aplicacion = st.text_input("Aplicación")
+        with colB:
+            f_pub = st.date_input("Fecha de publicación", value=None)
+            f_apl = st.date_input("Fecha de aplicación", value=None)
+            comentarios = st.text_area("Comentarios")
+            ug_bancos = st.checkbox("UG 01, 02, 03 - bancos")
+            ug_am = st.checkbox("UG04 - Asset management")
+            ug_seg = st.checkbox("UG05 - Seguros")
+            ug_latam = st.checkbox("UG06 - LATAM")
+            ug_corp = st.checkbox("UG07 - Corporates")
+            estado = st.text_input("Estado")
+            mes_pub = st.text_input("Mes publicación")
+            anio_pub = st.number_input("Año publicación",min_value=1900,max_value=2100,step=1,format="%d")
+        submitted = st.form_submit_button("Añadir documento")
+        if submitted:
+            if not nombre.strip():
+                st.error("El campo *Nombre* es obligatorio.")
+            else:
+                st.success("Documento preparado para envío (configura ENTRY_MAP + FORM_ACTION_URL).")
 
 # --- NOTICIAS ---
 with tabs[2]:
     st.markdown('<div class="portal-wrap"><div class="portal-title">Portal de noticias y novedades</div>',unsafe_allow_html=True)
     kws=st.text_input("Palabras clave",", ".join(DEFAULT_KEYWORDS)).split(",")
-    df_news=fetch_all_news(kws)
-    st.markdown('<div class="portal-card">',unsafe_allow_html=True)
-    st.markdown('<div class="table-header"><div>Hub</div><div>Fuente</div><div>Descripción</div><div>Acciones</div></div>',unsafe_allow_html=True)
-    for _,r in df_news.head(20).iterrows():
-        hub=classify_hub(r["source"],r["title"])
-        c1,c2,c3,c4=st.columns([1.6,1,4,1.6])
-        with c1: st.markdown(f'<div class="hub-tag">{hub}</div>',unsafe_allow_html=True)
-        with c2: st.markdown(f'<span class="badge-src">{r["source"]}</span>',unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="desc"><a href="{r["url"]}" target="_blank">{r["title"]}</a></div>',unsafe_allow_html=True)
-        with c4:
-            a,b=st.columns(2)
-            if a.button("Añadir",key="a"+r["url"]): st.success("Añadido (demo)")
-            if b.button("Descartar",key="d"+r["url"]): st.warning("Descartado (demo)")
-    st.markdown("</div></div>",unsafe_allow_html=True)
+    if st.button("Cargar noticias"):
+        with st.spinner("Cargando noticias…"):
+            df_news=fetch_all_news(kws)
+            st.session_state["df_news"]=df_news
+    df_news=st.session_state.get("df_news",pd.DataFrame())
+    if df_news.empty:
+        st.info("Pulsa **Cargar noticias** para obtener resultados.")
+    else:
+        st.markdown('<div class="portal-card">',unsafe_allow_html=True)
+        st.markdown('<div class="table-header"><div>Hub</div><div>Fuente</div><div>Descripción</div><div>Acciones</div></div>',unsafe_allow_html=True)
+        for _,r in df_news.head(20).iterrows():
+            hub=classify_hub(r["source"],r["title"])
+            c1,c2,c3,c4=st.columns([1.6,1,4,1.6])
+            with c1: st.markdown(f'<div class="hub-tag">{hub}</div>',unsafe_allow_html=True)
+            with c2: st.markdown(f'<span class="badge-src">{r["source"]}</span>',unsafe_allow_html=True)
+            with c3: st.markdown(f'<div class="desc"><a href="{r["url"]}" target="_blank">{r["title"]}</a></div>',unsafe_allow_html=True)
+            with c4:
+                a,b=st.columns(2)
+                if a.button("Añadir",key="a"+r["url"]): st.success("Añadido (demo)")
+                if b.button("Descartar",key="d"+r["url"]): st.warning("Descartado (demo)")
+        st.markdown("</div></div>",unsafe_allow_html=True)
 
 # --- RESUMEN ---
 with tabs[3]:
