@@ -7,9 +7,10 @@ import unicodedata
 from urllib.parse import quote, urljoin
 from io import StringIO
 from bs4 import BeautifulSoup
+from datetime import date
 
 # ===================== CONFIG =====================
-st.set_page_config(page_title="Observatorio ESG — NFQ", page_icon=None, layout="wide")
+st.set_page_config(page_title="Observatorio ESG — NFQ", layout="wide")
 
 SHEET_ID = "1tGyDxmB1TuBFiC8k-j19IoSkJO7gkdFCBIlG_hBPUCw"
 WORKSHEET = "BBDD"
@@ -23,13 +24,11 @@ ENTRY_MAP = {k: "" for k in [
     "UG 01, 02, 03 - bancos","UG04 - Asset management","UG05 - Seguros","UG06 - LATAM","UG07 - Corporates",
     "Estado","Mes publicación","Año publicación"
 ]}
-
 COLUMNS = list(ENTRY_MAP.keys())
 
 # ===================== THEME =====================
 NFQ_RED = "#9e1927"; NFQ_BLUE = "#6fa2d9"; NFQ_ORANGE = "#d4781b"; NFQ_PURPLE = "#5a64a8"
 BG_GRADIENT = f"linear-gradient(135deg, {NFQ_ORANGE}20, {NFQ_RED}20 33%, {NFQ_PURPLE}20 66%, {NFQ_BLUE}20)"
-
 st.markdown(f"""
 <style>
 .stApp {{ background: {BG_GRADIENT}; background-attachment: fixed; }}
@@ -136,31 +135,37 @@ with tabs[0]:
 # --- ALTA ---
 with tabs[1]:
     st.subheader("Dar de alta un nuevo documento")
+    pref = st.session_state.get("prefill_alta", {})
+    def _pref(name, default=""):
+        return pref.get(name, default)
+
     with st.form("alta_form"):
         colA,colB = st.columns(2)
         with colA:
-            nombre = st.text_input("Nombre*", placeholder="Título breve")
-            documento = st.text_input("Documento")
-            link = st.text_input("Link", placeholder="https://...")
-            autoridad = st.text_input("Autoridad emisora")
-            tipo = st.text_input("Tipo de documento")
-            ambito = st.text_input("Ámbito de aplicación")
-            tema_esg = st.selectbox("Tema ESG", ["","E","S","G","Mixto"])
-            tematica = st.text_input("Temática ESG")
-            descripcion = st.text_area("Descripción")
-            aplicacion = st.text_input("Aplicación")
+            nombre = st.text_input("Nombre*", value=_pref("Nombre",""))
+            documento = st.text_input("Documento", value=_pref("Documento",""))
+            link = st.text_input("Link", value=_pref("Link",""))
+            autoridad = st.text_input("Autoridad emisora", value=_pref("Autoridad emisora",""))
+            tipo = st.text_input("Tipo de documento", value=_pref("Tipo de documento",""))
+            ambito = st.text_input("Ámbito de aplicación", value=_pref("Ámbito de aplicación",""))
+            tema_esg = st.selectbox("Tema ESG", ["","E","S","G","Mixto"],
+                                    index=["","E","S","G","Mixto"].index(_pref("Tema ESG","")) if _pref("Tema ESG","") in ["","E","S","G","Mixto"] else 0)
+            tematica = st.text_input("Temática ESG", value=_pref("Temática ESG",""))
+            descripcion = st.text_area("Descripción", value=_pref("Descripción",""))
+            aplicacion = st.text_input("Aplicación", value=_pref("Aplicación",""))
         with colB:
-            f_pub = st.date_input("Fecha de publicación", value=None)
-            f_apl = st.date_input("Fecha de aplicación", value=None)
-            comentarios = st.text_area("Comentarios")
+            f_pub = st.date_input("Fecha de publicación", value=date.today())
+            f_apl = st.date_input("Fecha de aplicación", value=date.today())
+            comentarios = st.text_area("Comentarios", value=_pref("Comentarios",""))
             ug_bancos = st.checkbox("UG 01, 02, 03 - bancos")
             ug_am = st.checkbox("UG04 - Asset management")
             ug_seg = st.checkbox("UG05 - Seguros")
             ug_latam = st.checkbox("UG06 - LATAM")
             ug_corp = st.checkbox("UG07 - Corporates")
-            estado = st.text_input("Estado")
-            mes_pub = st.text_input("Mes publicación")
-            anio_pub = st.number_input("Año publicación",min_value=1900,max_value=2100,step=1,format="%d")
+            estado = st.text_input("Estado", value=_pref("Estado",""))
+            mes_pub = st.text_input("Mes publicación", value=_pref("Mes publicación",""))
+            anio_pub = st.number_input("Año publicación", min_value=1900, max_value=2100, step=1,
+                                       value=int(_pref("Año publicación", date.today().year)))
         submitted = st.form_submit_button("Añadir documento")
         if submitted:
             if not nombre.strip():
@@ -190,8 +195,17 @@ with tabs[2]:
             with c3: st.markdown(f'<div class="desc"><a href="{r["url"]}" target="_blank">{r["title"]}</a></div>',unsafe_allow_html=True)
             with c4:
                 a,b=st.columns(2)
-                if a.button("Añadir",key="a"+r["url"]): st.success("Añadido (demo)")
-                if b.button("Descartar",key="d"+r["url"]): st.warning("Descartado (demo)")
+                if a.button("Añadir",key="a"+r["url"]):
+                    st.session_state.prefill_alta = {
+                        "Nombre": r["title"],
+                        "Link": r["url"],
+                        "Autoridad emisora": r["source"],
+                        "Tipo de documento": "Noticia",
+                        "Tema ESG": "Mixto" if "net zero" in _norm_txt(r["title"]) else "",
+                        "Descripción": f"[{hub}] {r['title']}"
+                    }
+                    st.success("Noticia añadida al formulario en la pestaña 'Alta nuevo documento'.")
+                if b.button("Descartar",key="d"+r["url"]): st.warning("Descartado")
         st.markdown("</div></div>",unsafe_allow_html=True)
 
 # --- RESUMEN ---
