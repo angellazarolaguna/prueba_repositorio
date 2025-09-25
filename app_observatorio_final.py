@@ -5,6 +5,20 @@ import requests
 from urllib.parse import quote
 from io import StringIO
 
+import unicodedata
+
+def _norm_txt(x: str) -> str:
+    """Minúsculas + sin acentos (NFD) para búsquedas robustas."""
+    if x is None:
+        return ""
+    s = str(x)
+    # Normaliza y quita marcas diacríticas (acentos)
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return s.lower()
+
+
+
 # ===================== CONFIG =====================
 st.set_page_config(page_title="Observatorio ESG — NFQ", page_icon=None, layout="wide")
 
@@ -162,10 +176,12 @@ with tabs[0]:
     if filtro_ambito: df = df[df["Ámbito de aplicación"].astype(str).isin(filtro_ambito)]
     if filtro_estado: df = df[df["Estado"].astype(str).isin(filtro_estado)]
     if texto_busqueda:
-        mask = pd.Series(False, index=df.index)
-        for col in ["Nombre","Documento","Descripción","Temática ESG"]:
-            mask = mask | df[col].astype(str).str.contains(texto_busqueda, case=False, na=False)
-        df = df[mask]
+    q = _norm_txt(texto_busqueda)
+    mask = pd.Series(False, index=df.index)
+    for col in ["Nombre", "Documento", "Descripción", "Temática ESG"]:
+        col_norm = df[col].apply(_norm_txt)
+        mask = mask | col_norm.str.contains(q, na=False)
+    df = df[mask]
 
     # KPIs
     c1, c2, c3, c4 = st.columns(4)
