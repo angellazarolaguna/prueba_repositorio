@@ -7,16 +7,14 @@ import unicodedata
 from urllib.parse import quote, urljoin
 from io import StringIO
 from datetime import datetime
-from bs4 import BeautifulSoup   # 👈 ya importado siempre
+from bs4 import BeautifulSoup
 
 # ===================== CONFIG =====================
 st.set_page_config(page_title="Observatorio ESG — NFQ", page_icon=None, layout="wide")
 
-# Google Sheet y pestaña
 SHEET_ID = "1tGyDxmB1TuBFiC8k-j19IoSkJO7gkdFCBIlG_hBPUCw"
 WORKSHEET = "BBDD"
 
-# Google Form (para altas)
 FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLScTbCS0DRON_-aVzdA4y65_18cicMQdLy98uiapoXqc5B6xeQ/formResponse"
 
 ENTRY_MAP = {k: "" for k in [
@@ -29,7 +27,7 @@ ENTRY_MAP = {k: "" for k in [
 
 COLUMNS = list(ENTRY_MAP.keys())
 
-# ===================== THEME (NFQ) =====================
+# ===================== THEME =====================
 NFQ_RED = "#9e1927"; NFQ_BLUE = "#6fa2d9"; NFQ_ORANGE = "#d4781b"; NFQ_PURPLE = "#5a64a8"; NFQ_GREY = "#5c6773"
 BG_GRADIENT = f"linear-gradient(135deg, {NFQ_ORANGE}20, {NFQ_RED}20 33%, {NFQ_PURPLE}20 66%, {NFQ_BLUE}20)"
 
@@ -56,12 +54,28 @@ def _norm_txt(x: str) -> str:
 def ensure_schema(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [str(c).strip() for c in df.columns]
     for c in COLUMNS:
-        if c not in df.columns: df[c] = pd.NA
+        if c not in df.columns:
+            df[c] = pd.NA
     df = df[COLUMNS]
-    for c in ["Fecha de publicación","Fecha de aplicación"]:
-        df[c] = pd.to_datetime(df[c], errors="coerce").dt.date
-    df["Año publicación"] = pd.to_numeric(df["Año publicación"], errors="coerce").astype("Int64")
-    df["Mes publicación"] = df["Mes publicación"].astype(str).replace({"<NA>": ""})
+
+    # Fechas
+    for c in ["Fecha de publicación", "Fecha de aplicación"]:
+        df.loc[:, c] = pd.to_datetime(df[c], errors="coerce").dt.date
+
+    # Año / Mes
+    df.loc[:, "Año publicación"] = pd.to_numeric(df["Año publicación"], errors="coerce").astype("Int64")
+    df.loc[:, "Mes publicación"] = df["Mes publicación"].astype(str).replace({"<NA>": ""})
+
+    # Limpiar links HYPERLINK()
+    def clean_link(x):
+        s = str(x)
+        if s.startswith("=HYPERLINK"):
+            m = re.search(r'HYPERLINK\("([^"]+)"', s, flags=re.IGNORECASE)
+            return m.group(1) if m else ""
+        return s
+    if "Link" in df.columns:
+        df.loc[:, "Link"] = df["Link"].apply(clean_link)
+
     return df
 
 @st.cache_data(ttl=30)
@@ -70,9 +84,11 @@ def load_sheet(sheet_id: str, worksheet: str) -> pd.DataFrame:
     r = requests.get(url, timeout=20, headers={"User-Agent":"Mozilla/5.0"}); r.raise_for_status()
     return ensure_schema(pd.read_csv(StringIO(r.text)).dropna(how="all"))
 
-# ---- SCRAPING ----
+# ===================== SCRAPING =====================
 DEFAULT_KEYWORDS = ["climate","esg","sustainable","transition","risk","net zero"]
-def safe_get(url): return requests.get(url, timeout=20, headers={"User-Agent":"Mozilla/5.0"}).text
+
+def safe_get(url): 
+    return requests.get(url, timeout=20, headers={"User-Agent":"Mozilla/5.0"}).text
 
 def extract_links(html, base):
     soup = BeautifulSoup(html,"html.parser"); out=[]
@@ -123,7 +139,7 @@ with tabs[0]:
             mask|=df[c].apply(_norm_txt).str.contains(q,na=False)
         df=df[mask]
     st.metric("Total documentos",len(df))
-    st.dataframe(df,use_container_width=True,
+    st.dataframe(df,width="stretch",
         column_config={"Link":st.column_config.LinkColumn("Link")})
 
 # --- ALTA ---
