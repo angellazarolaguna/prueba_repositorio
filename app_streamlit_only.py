@@ -2,282 +2,220 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import requests
-from urllib.parse import quote
+import re
+import unicodedata
+from urllib.parse import quote, urljoin
 from io import StringIO
+from bs4 import BeautifulSoup
+from datetime import date
 
 # ===================== CONFIG =====================
-st.set_page_config(page_title="Observatorio ESG — NFQ", page_icon=None, layout="wide")
+st.set_page_config(page_title="Observatorio ESG — NFQ", layout="wide")
 
-# Tu Google Sheet y pestaña:
-SHEET_ID = "1tGyDxmB1TuBFiC8k-j19IoSkJO7gkdFCBIlG_hBPUCw"   # <- tu Sheet ID
-WORKSHEET = "BBDD"                                         # <- tu pestaña
+SHEET_ID = "1tGyDxmB1TuBFiC8k-j19IoSkJO7gkdFCBIlG_hBPUCw"
+WORKSHEET = "BBDD"
 
-# Tu Google Form (URL termina en /formResponse):
 FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLScTbCS0DRON_-aVzdA4y65_18cicMQdLy98uiapoXqc5B6xeQ/formResponse"
 
-# Pega aquí tus entry.xxxxxx reales cuando los tengas (si no, la pestaña "Alta" avisará).
-ENTRY_MAP = {
-    "Nombre": "",
-    "Documento": "",
-    "Link": "",
-    "Autoridad emisora": "",
-    "Tipo de documento": "",
-    "Ámbito de aplicación": "",
-    "Tema ESG": "",
-    "Temática ESG": "",
-    "Descripción": "",
-    "Aplicación": "",
-    "Fecha de publicación": "",
-    "Fecha de aplicación": "",
-    "Comentarios": "",
-    "UG 01, 02, 03 - bancos": "",
-    "UG04 - Asset management": "",
-    "UG05 - Seguros": "",
-    "UG06 - LATAM": "",
-    "UG07 - Corporates": "",
-    "Estado": "",
-    "Mes publicación": "",
-    "Año publicación": "",
-}
-
-COLUMNS = [
-    "Nombre","Documento","Link","Autoridad emisora","Tipo de documento",
-    "Ámbito de aplicación","Tema ESG","Temática ESG","Descripción","Aplicación",
+ENTRY_MAP = {k: "" for k in [
+    "Nombre","Documento","Link","Autoridad emisora","Tipo de documento","Ámbito de aplicación",
+    "Tema ESG","Temática ESG","Descripción","Aplicación",
     "Fecha de publicación","Fecha de aplicación","Comentarios",
-    "UG 01, 02, 03 - bancos","UG04 - Asset management","UG05 - Seguros",
-    "UG06 - LATAM","UG07 - Corporates","Estado","Mes publicación","Año publicación"
-]
+    "UG 01, 02, 03 - bancos","UG04 - Asset management","UG05 - Seguros","UG06 - LATAM","UG07 - Corporates",
+    "Estado","Mes publicación","Año publicación"
+]}
+COLUMNS = list(ENTRY_MAP.keys())
 
-# ===================== THEME (NFQ) =====================
-NFQ_RED = "#9e1927"
-NFQ_BLUE = "#6fa2d9"
-NFQ_ORANGE = "#d4781b"
-NFQ_PURPLE = "#5a64a8"
+# ===================== THEME =====================
+NFQ_RED = "#9e1927"; NFQ_BLUE = "#6fa2d9"; NFQ_ORANGE = "#d4781b"; NFQ_PURPLE = "#5a64a8"
 BG_GRADIENT = f"linear-gradient(135deg, {NFQ_ORANGE}20, {NFQ_RED}20 33%, {NFQ_PURPLE}20 66%, {NFQ_BLUE}20)"
-
 st.markdown(f"""
 <style>
-:root {{
-  --nfq-red: {NFQ_RED};
-  --nfq-blue: {NFQ_BLUE};
-  --nfq-orange: {NFQ_ORANGE};
-  --nfq-purple: {NFQ_PURPLE};
-}}
-.stApp {{
-  background: {BG_GRADIENT};
-  background-attachment: fixed;
-}}
-.block-container {{
-  padding-top: 1.2rem;
-  padding-bottom: 2.5rem;
-}}
-h1, h2, h3 {{ letter-spacing: 0.2px; }}
-[data-testid="stMetric"] {{
-  background: #ffffffcc;
-  border: 1px solid #ffffff;
-  border-radius: 16px;
-  padding: 12px 16px;
-  box-shadow: 0 2px 12px rgb(0 0 0 / 6%);
-}}
-[data-testid="stDataFrame"] {{
-  background: #ffffffee;
-  border-radius: 16px;
-  box-shadow: 0 4px 18px rgb(0 0 0 / 10%);
-  border: 1px solid #ffffff;
-  overflow: hidden;
-}}
-section[data-testid="stSidebar"] > div {{
-  background: #ffffffd8;
-  border-left: 4px solid var(--nfq-purple);
-}}
-[data-testid="stHorizontalBlock"] [data-baseweb="tab"] {{
-  background: transparent;
-}}
+.stApp {{ background: {BG_GRADIENT}; background-attachment: fixed; }}
+.portal-wrap{{ background:#f2dbe6; padding:18px 22px; border-radius:18px; margin-top:8px; }}
+.portal-card{{ background:#fff; border-radius:24px; box-shadow: 0 10px 24px rgb(0 0 0 / 10%); padding:14px 18px; }}
+.portal-title{{ font-size:28px; font-weight:800; color:#6b2242; margin:0 0 12px 2px; }}
+.table-header{{ display:grid; grid-template-columns:1.6fr 1fr 4fr 1.6fr; font-weight:700; border-bottom:1px solid #eee; padding:10px 4px; }}
+.badge-src{{ padding:4px 8px; border-radius:999px; background:#eef4ff; color:#25467a; font-weight:600; font-size:12px; }}
+.desc{{ color:#404040; font-size:14px; }}
+.hub-tag{{ font-weight:700; color:#222; }}
 </style>
 """, unsafe_allow_html=True)
 
 # ===================== HELPERS =====================
+def _norm_txt(x: str) -> str:
+    if x is None: return ""
+    s = unicodedata.normalize("NFD", str(x))
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn").lower()
+
 def ensure_schema(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [str(c).strip() for c in df.columns]
     for c in COLUMNS:
         if c not in df.columns:
             df[c] = pd.NA
     df = df[COLUMNS]
-    # Fechas
-    for c in ["Fecha de publicación","Fecha de aplicación"]:
-        df[c] = pd.to_datetime(df[c], errors="coerce").dt.date
-    # Año / Mes
-    df["Año publicación"] = pd.to_numeric(df["Año publicación"], errors="coerce").astype("Int64")
-    df["Mes publicación"] = df["Mes publicación"].astype(str).replace({"<NA>": ""})
-    # Extraer URL si viene como =HYPERLINK("url","texto")
+    for c in ["Fecha de publicación", "Fecha de aplicación"]:
+        df.loc[:, c] = pd.to_datetime(df[c], errors="coerce").dt.date
+    df.loc[:, "Año publicación"] = pd.to_numeric(df["Año publicación"], errors="coerce").astype("Int64")
+    df.loc[:, "Mes publicación"] = df["Mes publicación"].astype(str).replace({"<NA>": ""})
     def clean_link(x):
         s = str(x)
         if s.startswith("=HYPERLINK"):
-            import re
             m = re.search(r'HYPERLINK\("([^"]+)"', s, flags=re.IGNORECASE)
             return m.group(1) if m else ""
         return s
     if "Link" in df.columns:
-        df["Link"] = df["Link"].apply(clean_link)
+        df.loc[:, "Link"] = df["Link"].apply(clean_link)
     return df
 
-@st.cache_data(show_spinner=False, ttl=30)
+@st.cache_data(ttl=30)
 def load_sheet(sheet_id: str, worksheet: str) -> pd.DataFrame:
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={quote(worksheet)}"
-    r = requests.get(url, timeout=20)
-    r.raise_for_status()
-    df = pd.read_csv(StringIO(r.text))
-    df = df.dropna(how="all")
-    return ensure_schema(df)
+    r = requests.get(url, timeout=20, headers={"User-Agent":"Mozilla/5.0"}); r.raise_for_status()
+    return ensure_schema(pd.read_csv(StringIO(r.text)).dropna(how="all"))
+
+# ===================== SCRAPING =====================
+DEFAULT_KEYWORDS = ["climate","esg","sustainable","transition","risk","net zero"]
+
+def safe_get(url): 
+    return requests.get(url, timeout=20, headers={"User-Agent":"Mozilla/5.0"}).text
+
+def extract_links(html, base):
+    soup = BeautifulSoup(html,"html.parser"); out=[]
+    for a in soup.find_all("a", href=True):
+        href = urljoin(base,a["href"])
+        txt = a.get_text(" ", strip=True)
+        if len(txt)<5: continue
+        out.append({"title":txt,"url":href,"source":base})
+    return out
+
+@st.cache_data(ttl=600)
+def fetch_all_news(kws):
+    rows=[]
+    for label,url in [
+        ("CAF","https://carbonaccountingfinancials.com/en/news-events"),
+        ("NZBA","https://www.unepfi.org/net-zero-banking/"),
+        ("PACTA","https://pacta.rmi.org/"),
+        ("EBA","https://www.eba.europa.eu/homepage"),
+        ("BIS","https://www.bis.org/")]:
+        try:
+            html=safe_get(url)
+            for it in extract_links(html,url):
+                if any(_norm_txt(k) in _norm_txt(it["title"]) for k in kws):
+                    it["source"]=label; rows.append(it)
+        except: continue
+    return pd.DataFrame(rows).drop_duplicates("url")
+
+def classify_hub(source,title):
+    t=_norm_txt(title)
+    if "net zero" in t: return "Net Zero"
+    if "data" in t or "analytics" in t or "ai" in t: return "Data, Analytics & AI"
+    if "pacta" in _norm_txt(source): return "Corporate"
+    return "Sustainable Finance"
 
 # ===================== UI =====================
 st.title("Observatorio ESG — NFQ")
+tabs = st.tabs(["Repositorio","Alta nuevo documento","Noticias","Resumen"])
 
-tabs = st.tabs(["Repositorio", "Alta nuevo documento"])
-
-
-
-# ------------ TAB 1: REPOSITORIO ------------
+# --- REPOSITORIO ---
 with tabs[0]:
-    try:
-        df_full = load_sheet(SHEET_ID, WORKSHEET)
-    except Exception as e:
-        st.error("No se pudo cargar el Google Sheet. Verifica permisos (Lector público), SHEET_ID y nombre de pestaña.")
-
-
-    # Filtros
-    with st.expander("Filtros", expanded=False):
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1: filtro_anio = st.multiselect("Año publicación", sorted([x for x in df_full["Año publicación"].dropna().unique()]))
-        with col2: filtro_tema = st.multiselect("Tema ESG", sorted([str(x) for x in df_full["Tema ESG"].dropna().unique()]))
-        with col3: filtro_tipo = st.multiselect("Tipo de documento", sorted([str(x) for x in df_full["Tipo de documento"].dropna().unique()]))
-        with col4: filtro_ambito = st.multiselect("Ámbito de aplicación", sorted([str(x) for x in df_full["Ámbito de aplicación"].dropna().unique()]))
-        with col5: filtro_estado = st.multiselect("Estado", sorted([str(x) for x in df_full["Estado"].dropna().unique()]))
-        texto_busqueda = st.text_input("Búsqueda libre (Nombre, Documento, Descripción, Temática)")
-
-    df = df_full.copy()
-    if filtro_anio: df = df[df["Año publicación"].isin(filtro_anio)]
-    if filtro_tema: df = df[df["Tema ESG"].astype(str).isin(filtro_tema)]
-    if filtro_tipo: df = df[df["Tipo de documento"].astype(str).isin(filtro_tipo)]
-    if filtro_ambito: df = df[df["Ámbito de aplicación"].astype(str).isin(filtro_ambito)]
-    if filtro_estado: df = df[df["Estado"].astype(str).isin(filtro_estado)]
+    try: df_full=load_sheet(SHEET_ID,WORKSHEET)
+    except Exception: st.error("Error cargando Google Sheet"); st.stop()
+    texto_busqueda=st.text_input("Buscar")
+    df=df_full.copy()
     if texto_busqueda:
-        mask = pd.Series(False, index=df.index)
-        for col in ["Nombre","Documento","Descripción","Temática ESG"]:
-            mask = mask | df[col].astype(str).str.contains(texto_busqueda, case=False, na=False)
-        df = df[mask]
+        q=_norm_txt(texto_busqueda); mask=pd.Series(False,index=df.index)
+        for c in ["Nombre","Documento","Descripción","Temática ESG"]:
+            mask|=df[c].apply(_norm_txt).str.contains(q,na=False)
+        df=df[mask]
+    st.metric("Total documentos",len(df))
+    st.dataframe(df,width="stretch",
+        column_config={"Link":st.column_config.LinkColumn("Link")})
 
-    # KPIs
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.metric("Total documentos", len(df))
-    with c2: st.metric("Años distintos", df["Año publicación"].nunique())
-    with c3: st.metric("Temas ESG", df["Tema ESG"].nunique())
-    with c4: st.metric("Autoridades emisoras", df["Autoridad emisora"].nunique())
-
-    # Gráficos compactos
-    st.markdown("#### Vista general")
-    gcol1, gcol2 = st.columns(2)
-    with gcol1:
-        if len(df.dropna(subset=["Año publicación"])) > 0:
-            chart1 = alt.Chart(df.dropna(subset=["Año publicación"])).mark_bar().encode(
-                x=alt.X("Año publicación:O", title="Año"),
-                y=alt.Y("count()", title="Nº documentos"),
-                tooltip=[alt.Tooltip("Año publicación:O", title="Año"), alt.Tooltip("count()", title="Nº")]
-            ).properties(height=180)
-            st.altair_chart(chart1, use_container_width=True)
-    with gcol2:
-        if len(df.dropna(subset=["Tema ESG"])) > 0:
-            chart2 = alt.Chart(df.dropna(subset=["Tema ESG"])).mark_bar().encode(
-                x=alt.X("count()", title="Nº documentos"),
-                y=alt.Y("Tema ESG:O", sort="-x", title="Tema ESG"),
-                tooltip=[alt.Tooltip("Tema ESG:O", title="Tema"), alt.Tooltip("count()", title="Nº")]
-            ).properties(height=180)
-            st.altair_chart(chart2, use_container_width=True)
-
-    # Tabla con links clicables
-    st.markdown("#### Repositorio")
-    st.dataframe(
-        df,
-        use_container_width=True,
-        column_config={
-            "Link": st.column_config.LinkColumn("Link", help="Abrir documento"),
-        },
-        height=520
-    )
-
-# ------------ TAB 2: ALTA NUEVO ------------
+# --- ALTA ---
 with tabs[1]:
-    st.markdown("#### Dar de alta un nuevo documento")
-    if not FORM_ACTION_URL.strip():
-        st.warning("Configura FORM_ACTION_URL (termina en /formResponse) para habilitar el alta.")
-    missing_entries = [k for k,v in ENTRY_MAP.items() if v.strip()=="" and k in COLUMNS]
-    if missing_entries:
-        st.info("Faltan `entry.xxxxx` para: " + ", ".join(missing_entries))
+    st.subheader("Dar de alta un nuevo documento")
+    pref = st.session_state.get("prefill_alta", {})
+    def _pref(name, default=""):
+        return pref.get(name, default)
 
     with st.form("alta_form"):
-        colA, colB = st.columns(2)
+        colA,colB = st.columns(2)
         with colA:
-            nombre = st.text_input("Nombre*", placeholder="Título breve del documento")
-            documento = st.text_input("Documento", placeholder="Código/Identificador si aplica")
-            link = st.text_input("Link", placeholder="https://...")
-            autoridad = st.selectbox("Autoridad Emisora", ["", "EBA", "ESMA", "UE", "CNMV"])
-            tipo = st.text_input("Tipo de documento", placeholder="Normativa, guía, consulta, informe...")
-            ambito = st.text_input("Ámbito de aplicación", placeholder="UE, ES, Global...")
-            tema_esg = st.selectbox("Tema ESG", ["", "E", "S", "G", "Mixto"])
-            tematica_esg = st.text_input("Temática ESG", placeholder="Taxonomía, divulgación, riesgos, etc.")
-            descripcion = st.text_area("Descripción", placeholder="Resumen breve")
-            aplicacion = st.text_input("Aplicación", placeholder="Obligatoria/voluntaria, sectores, etc.")
+            nombre = st.text_input("Nombre*", value=_pref("Nombre",""))
+            documento = st.text_input("Documento", value=_pref("Documento",""))
+            link = st.text_input("Link", value=_pref("Link",""))
+            autoridad = st.text_input("Autoridad emisora", value=_pref("Autoridad emisora",""))
+            tipo = st.text_input("Tipo de documento", value=_pref("Tipo de documento",""))
+            ambito = st.text_input("Ámbito de aplicación", value=_pref("Ámbito de aplicación",""))
+            tema_esg = st.selectbox("Tema ESG", ["","E","S","G","Mixto"],
+                                    index=["","E","S","G","Mixto"].index(_pref("Tema ESG","")) if _pref("Tema ESG","") in ["","E","S","G","Mixto"] else 0)
+            tematica = st.text_input("Temática ESG", value=_pref("Temática ESG",""))
+            descripcion = st.text_area("Descripción", value=_pref("Descripción",""))
+            aplicacion = st.text_input("Aplicación", value=_pref("Aplicación",""))
         with colB:
-            f_pub = st.date_input("Fecha de publicación", value=None)
-            f_apl = st.date_input("Fecha de aplicación", value=None)
-            comentarios = st.text_area("Comentarios")
-            ug_bancos = st.checkbox("UG 01, 02, 03 - bancos", value=False)
-            ug_am = st.checkbox("UG04 - Asset management", value=False)
-            ug_seguros = st.checkbox("UG05 - Seguros", value=False)
-            ug_latam = st.checkbox("UG06 - LATAM", value=False)
-            ug_corp = st.checkbox("UG07 - Corporates", value=False)
-            estado = st.selectbox("Estado", ["", "Borrador", "Propuesta", "En consulta", "Publicado", "Derogado", "Fuera de alcance"])
-            mes_pub = st.text_input("Mes publicación", placeholder="Ej. enero / 01 / Q1")
-            anio_pub = st.number_input("Año publicación", min_value=1900, max_value=2100, step=1, format="%d")
-
+            f_pub = st.date_input("Fecha de publicación", value=date.today())
+            f_apl = st.date_input("Fecha de aplicación", value=date.today())
+            comentarios = st.text_area("Comentarios", value=_pref("Comentarios",""))
+            ug_bancos = st.checkbox("UG 01, 02, 03 - bancos")
+            ug_am = st.checkbox("UG04 - Asset management")
+            ug_seg = st.checkbox("UG05 - Seguros")
+            ug_latam = st.checkbox("UG06 - LATAM")
+            ug_corp = st.checkbox("UG07 - Corporates")
+            estado = st.text_input("Estado", value=_pref("Estado",""))
+            mes_pub = st.text_input("Mes publicación", value=_pref("Mes publicación",""))
+            anio_pub = st.number_input("Año publicación", min_value=1900, max_value=2100, step=1,
+                                       value=int(_pref("Año publicación", date.today().year)))
         submitted = st.form_submit_button("Añadir documento")
         if submitted:
             if not nombre.strip():
                 st.error("El campo *Nombre* es obligatorio.")
-            elif not FORM_ACTION_URL.strip():
-                st.error("Falta configurar FORM_ACTION_URL (termina en /formResponse).")
-            elif any(v.strip()=="" for v in ENTRY_MAP.values()):
-                st.error("Faltan `entry.xxxxx` en ENTRY_MAP. Complétalos para enviar al Form.")
             else:
-                payload = {
-                    ENTRY_MAP["Nombre"]: nombre.strip(),
-                    ENTRY_MAP["Documento"]: documento.strip(),
-                    ENTRY_MAP["Link"]: link.strip(),
-                    ENTRY_MAP["Autoridad emisora"]: autoridad.strip(),
-                    ENTRY_MAP["Tipo de documento"]: tipo.strip(),
-                    ENTRY_MAP["Ámbito de aplicación"]: ambito.strip(),
-                    ENTRY_MAP["Tema ESG"]: tema_esg.strip(),
-                    ENTRY_MAP["Temática ESG"]: tematica_esg.strip(),
-                    ENTRY_MAP["Descripción"]: descripcion.strip(),
-                    ENTRY_MAP["Aplicación"]: aplicacion.strip(),
-                    ENTRY_MAP["Fecha de publicación"]: f_pub.isoformat() if f_pub else "",
-                    ENTRY_MAP["Fecha de aplicación"]: f_apl.isoformat() if f_apl else "",
-                    ENTRY_MAP["Comentarios"]: comentarios.strip(),
-                    ENTRY_MAP["UG 01, 02, 03 - bancos"]: "Sí" if ug_bancos else "",
-                    ENTRY_MAP["UG04 - Asset management"]: "Sí" if ug_am else "",
-                    ENTRY_MAP["UG05 - Seguros"]: "Sí" if ug_seguros else "",
-                    ENTRY_MAP["UG06 - LATAM"]: "Sí" if ug_latam else "",
-                    ENTRY_MAP["UG07 - Corporates"]: "Sí" if ug_corp else "",
-                    ENTRY_MAP["Estado"]: estado,
-                    ENTRY_MAP["Mes publicación"]: str(mes_pub).strip(),
-                    ENTRY_MAP["Año publicación"]: int(anio_pub) if anio_pub else ""
-                }
-                try:
-                    r = requests.post(FORM_ACTION_URL, data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"}, timeout=20)
-                    if r.status_code in (200, 302):
-                        st.success("Documento enviado correctamente.")
-                        st.balloons()
-                    else:
-                        st.error(f"No se pudo enviar al Form (status {r.status_code}). Revisa FORM_ACTION_URL y ENTRY_MAP.")
-                except Exception as e:
-                    st.error(f"Error al enviar al Form: {e}")
+                st.success("Documento preparado para envío (configura ENTRY_MAP + FORM_ACTION_URL).")
+
+# --- NOTICIAS ---
+with tabs[2]:
+    st.markdown('<div class="portal-wrap"><div class="portal-title">Portal de noticias y novedades</div>',unsafe_allow_html=True)
+    kws=st.text_input("Palabras clave",", ".join(DEFAULT_KEYWORDS)).split(",")
+    if st.button("Cargar noticias"):
+        with st.spinner("Cargando noticias…"):
+            df_news=fetch_all_news(kws)
+            st.session_state["df_news"]=df_news
+    df_news=st.session_state.get("df_news",pd.DataFrame())
+    if df_news.empty:
+        st.info("Pulsa **Cargar noticias** para obtener resultados.")
+    else:
+        st.markdown('<div class="portal-card">',unsafe_allow_html=True)
+        st.markdown('<div class="table-header"><div>Hub</div><div>Fuente</div><div>Descripción</div><div>Acciones</div></div>',unsafe_allow_html=True)
+        for _,r in df_news.head(20).iterrows():
+            hub=classify_hub(r["source"],r["title"])
+            c1,c2,c3,c4=st.columns([1.6,1,4,1.6])
+            with c1: st.markdown(f'<div class="hub-tag">{hub}</div>',unsafe_allow_html=True)
+            with c2: st.markdown(f'<span class="badge-src">{r["source"]}</span>',unsafe_allow_html=True)
+            with c3: st.markdown(f'<div class="desc"><a href="{r["url"]}" target="_blank">{r["title"]}</a></div>',unsafe_allow_html=True)
+            with c4:
+                a,b=st.columns(2)
+                if a.button("Añadir",key="a"+r["url"]):
+                    st.session_state.prefill_alta = {
+                        "Nombre": r["title"],
+                        "Link": r["url"],
+                        "Autoridad emisora": r["source"],
+                        "Tipo de documento": "Noticia",
+                        "Tema ESG": "Mixto" if "net zero" in _norm_txt(r["title"]) else "",
+                        "Descripción": f"[{hub}] {r['title']}"
+                    }
+                    st.success("Noticia añadida al formulario en la pestaña 'Alta nuevo documento'.")
+                if b.button("Descartar",key="d"+r["url"]): st.warning("Descartado")
+        st.markdown("</div></div>",unsafe_allow_html=True)
+
+# --- RESUMEN ---
+with tabs[3]:
+    st.subheader("Resumen automático")
+    url=st.text_input("Pega URL de noticia")
+    if url:
+        try:
+            html=safe_get(url); soup=BeautifulSoup(html,"html.parser")
+            text=" ".join(p.get_text(" ",strip=True) for p in soup.find_all("p"))
+            sents=re.split(r"(?<=[.!?]) +",text)[:5]
+            for s in sents: st.markdown(f"- {s}")
+        except Exception as e: st.error(e)
