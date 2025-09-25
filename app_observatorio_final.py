@@ -8,14 +8,14 @@ from io import StringIO
 # ===================== CONFIG =====================
 st.set_page_config(page_title="Observatorio ESG — NFQ", page_icon=None, layout="wide")
 
-# Tu Google Sheet y pestaña:
-SHEET_ID = "1tGyDxmB1TuBFiC8k-j19IoSkJO7gkdFCBIlG_hBPUCw"   # <- tu Sheet ID
-WORKSHEET = "BBDD"                                         # <- tu pestaña
 
-# Tu Google Form (URL termina en /formResponse):
+SHEET_ID = "1tGyDxmB1TuBFiC8k-j19IoSkJO7gkdFCBIlG_hBPUCw" 
+WORKSHEET = "BBDD"                                    
+
+
 FORM_ACTION_URL = "https://docs.google.com/forms/d/e/1FAIpQLScTbCS0DRON_-aVzdA4y65_18cicMQdLy98uiapoXqc5B6xeQ/formResponse"
 
-# Pega aquí tus entry.xxxxxx reales cuando los tengas (si no, la pestaña "Alta" avisará).
+
 ENTRY_MAP = {
     "Nombre": "",
     "Documento": "",
